@@ -3,5 +3,8 @@ name = "smart-wallet-ai"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "asyncpg>=0.31.0",
     "fastapi[standard]>=0.142.2",
+    "pgvector>=0.5.0",
+    "sqlalchemy[asyncio]>=2.1.3",
 ]
