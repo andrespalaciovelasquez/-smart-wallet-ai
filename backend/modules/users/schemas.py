@@ -62,5 +62,4 @@ class UserResponse(BaseModel):
         examples=["2026-10-04T15:00:00Z"]
     )
 
-    #Permite mapear directamente objetos User de SQLAlchemy a este Schema
     model_config = ConfigDict(from_attributes=True)

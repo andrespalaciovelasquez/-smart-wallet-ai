@@ -23,3 +23,7 @@ class UnauthorizedError(DomainError):
 class WalletNotFoundError(DomainError):
     """Se lanza cuando no se encuentra la billetera del usuario"""
     pass
+
+class InsufficientBalanceError(DomainError):
+    """Se lanza cuando se intenta realizar un gasto superior al saldo disponible"""
+    pass
