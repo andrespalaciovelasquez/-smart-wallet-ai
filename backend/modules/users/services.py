@@ -8,7 +8,7 @@ from backend.modules.users.repository import UserRepository
 from backend.modules.wallet.models import Wallet
 
 class UserService:
-    """Orquesta la lógica de negocio para usuarios y su billetera inicil"""
+    """Orquesta la lógica de negocio para usuarios y su billetera inicial"""
 
     def __init__(self, session: AsyncSession, user_repo: UserRepository | None = None) -> None:
         self.session = session

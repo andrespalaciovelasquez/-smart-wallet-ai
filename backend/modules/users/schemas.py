@@ -23,8 +23,12 @@ class UserRegister(BaseModel):
 
 class UserLogin(BaseModel):
     """Credenciales para iniciar sesión"""
-    email: EmailStr = Field(examples=["andres@example.com"])
-    password: str = Field(examples=["ClaveSegura123!"])
+    email: EmailStr = Field(
+        examples=["andres@example.com"]
+    )
+    password: str = Field(
+        examples=["ClaveSegura123!"]
+    )
 
 # Esquemas de Salida (Responses)
 class TokenResponse(BaseModel):
@@ -41,10 +45,22 @@ class TokenResponse(BaseModel):
 
 class UserResponse(BaseModel):
     """Datos públicos del usuario devueltos por la API"""
-    id: int = Field(description="Identificador único del usuario", examples=[1])
-    email: EmailStr = Field(description="Correo electrónico del usuario", examples=["andres@example.com"])
-    full_name: str = Field(description="Nombre completo del usuario", examples=["Andrés Palacio"])
-    created_at: datetime = Field(description="Fecha de registro", examples=["2026-10-04T15:00:00Z"])
+    id: int = Field(
+        description="Identificador único del usuario", 
+        examples=[1]
+    )
+    email: EmailStr = Field(
+        description="Correo electrónico del usuario", 
+        examples=["andres@example.com"]
+    )
+    full_name: str = Field(
+        description="Nombre completo del usuario", 
+        examples=["Andrés Palacio"]
+    )
+    created_at: datetime = Field(
+        description="Fecha de registro", 
+        examples=["2026-10-04T15:00:00Z"]
+    )
 
     #Permite mapear directamente objetos User de SQLAlchemy a este Schema
     model_config = ConfigDict(from_attributes=True)

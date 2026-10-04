@@ -5,13 +5,21 @@ class DomainError(Exception):
         super().__init__(message)
 
 class UserAlreadyExistsError(DomainError):
-    """Se lanza cuando un correo ya está registrado en el sistema."""
+    """Se lanza cuando un correo ya está registrado en el sistema"""
     pass
 
 class InvalidCredentialsError(DomainError):
-    """Se lanza cuando el correo o la contraseña son incorrectos."""
+    """Se lanza cuando el correo o la contraseña son incorrectos"""
     pass
 
 class UserNotFoundError(DomainError):
-    """Se lanza cuando un usuario no se encuentra en el sistema."""
+    """Se lanza cuando un usuario no se encuentra en el sistema"""
+    pass
+
+class UnauthorizedError(DomainError):
+    """Se lanza cuando el token JWT es inválido, expirado o está ausente"""
+    pass
+
+class WalletNotFoundError(DomainError):
+    """Se lanza cuando no se encuentra la billetera del usuario"""
     pass
