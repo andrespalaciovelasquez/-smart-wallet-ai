@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     LLM_API_KEY: str
     LLM_MODEL: str
     EMBEDDING_MODEL: str
+    EMBEDDING_DIMENSION: int = 768
 
     @property
     def is_debug(self) -> bool:
