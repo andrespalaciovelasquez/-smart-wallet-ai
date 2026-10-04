@@ -139,23 +139,23 @@ tests/                          # Suite de pruebas automatizadas
 ## 🔄 Flujo de Uso Típico (User Journey)
 
 ```text
-[POST /users/register]       → Crea usuario "Carlos" con billetera de $1,000.00 USD
+[POST /users/register]       → Crea usuario "Andrés" con billetera de $1,000.00 USD
              │
              ▼
 [POST /users/login]          → Obtiene el JWT. Se autentica en Swagger UI (/docs)
              │
              ▼
 [POST /wallet/transfer]      → Transfiere $50.00 a "María" de forma atómica (ACID)
-                               Saldo de Carlos: $950.00 | Saldo de María: $1,050.00
+                               Saldo de Andrés: $950.00 | Saldo de María: $1,050.00
              │
              ▼
-[POST /chat/parse-expense]   → Carlos envía: "Gasté $35 en cenar ramen con amigos"
+[POST /chat/parse-expense]   → Andrés envía: "Gasté $35 en cenar ramen con amigos"
                                LLM extrae: {monto: 35, categoría: Restaurantes}
                                Egreso registrado + embedding guardado en pgvector
-                               Saldo de Carlos: $915.00
+                               Saldo de Andrés: $915.00
              │
              ▼
-[POST /chat/ask]             → Carlos pregunta: "¿Cuánto he gastado en comida?"
+[POST /chat/ask]             → Andrés pregunta: "¿Cuánto he gastado en comida?"
                                Búsqueda por similitud vectorial → localiza la cena de ramen
                                Inyecta saldo real ($915.00) en el prompt compositivo
                                LLM responde con datos exactos y verificables
