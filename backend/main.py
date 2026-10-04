@@ -4,6 +4,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.config import settings
 from backend.core.database import engine, Base, get_db
+from backend.modules.users.models import User  # noqa: F401
+from backend.modules.wallet.models import Wallet  # noqa: F401
+from backend.errors.handlers import register_exception_handlers
+from backend.modules.users.routes import router as users_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -19,6 +23,12 @@ app = FastAPI(
     debug=settings.is_debug,
     lifespan=lifespan
 )
+
+# Registrar interceptores globales de error
+register_exception_handlers(app)
+
+# Registrar routers de módulos
+app.include_router(users_router)
 
 @app.get("/health", tags=["Health"])
 async def health_check(db: AsyncSession = Depends(get_db)):
