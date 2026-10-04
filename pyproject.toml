@@ -6,5 +6,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "fastapi[standard]>=0.142.2",
     "pgvector>=0.5.0",
+    "pwdlib[argon2]>=0.3.1",
+    "pyjwt>=2.15.1",
     "sqlalchemy[asyncio]>=2.1.3",
 ]
