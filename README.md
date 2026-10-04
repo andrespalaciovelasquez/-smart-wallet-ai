@@ -12,15 +12,16 @@ Este proyecto es un **ejercicio de construcción personal** para consolidar y de
 
 ### 1. Ingeniería de Backend (FastAPI + Python)
 - Organización de código con **Modular Monolith / Clean Architecture**: dominios desacoplados con responsabilidad única en modelos ORM, esquemas de validación, repositorios, servicios y rutas.
-- **Transacciones ACID** en operaciones monetarias: bloqueo a nivel de fila en PostgreSQL para garantizar que una transferencia entre dos usuarios sea atómica, consistente y sin condición de carrera.
-- Manejo desacoplado de **excepciones de dominio** (ej. `InsufficientBalanceError`) y su traducción a respuestas HTTP estandarizadas.
+- **Transacciones atómicas** en operaciones monetarias: creación de transacciones y actualización de saldo de billetera en un único `commit`, garantizando consistencia de datos.
+- Manejo desacoplado de **excepciones de dominio** (ej. `InsufficientBalanceError`, `UnauthorizedError`) y su traducción centralizada a respuestas HTTP estandarizadas.
 - Validación estricta de esquemas de entrada/salida con **Pydantic v2**.
+- Autenticación **stateless** con JWT (HS256) y **Argon2id** (OWASP 2026) para hashing de contraseñas.
 
 ### 2. AI Engineering (LLMs Agnósticos + pgvector)
-- **Structured Outputs deterministas**: extracción confiable de entidades financieras (monto, categoría, comercio) a partir de lenguaje natural mediante esquemas tipados Pydantic, desacoplado de la API o proveedor de LLM específico.
-- **Almacenamiento vectorial híbrido**: registro de gastos con su embedding semántico en **PostgreSQL + `pgvector`**, habilitando búsquedas por significado (*"¿Cuánto gasté en salud?"* encuentra "Farmacia San Pablo" sin depender de coincidencia exacta de texto).
+- **Almacenamiento vectorial híbrido**: registro de transacciones financieras con su embedding semántico en **PostgreSQL + `pgvector`**, habilitando búsquedas por significado (*"¿Cuánto gasté en salud?"* encuentra "Farmacia San Pablo" sin depender de coincidencia exacta de texto).
+- **Generación de embeddings resiliente**: si la API del LLM falla, la transacción financiera se guarda sin bloquear al usuario (el embedding queda como `NULL` y puede generarse después).
+- **Structured Outputs deterministas**: extracción confiable de entidades financieras a partir de lenguaje natural mediante esquemas tipados Pydantic, desacoplado de la API o proveedor de LLM específico.
 - **Arquitectura de Prompts Compositivos**: ensamblaje dinámico y modular de contexto (instrucciones de sistema + datos financieros reales + consulta del usuario) para garantizar respuestas verídicas (*grounding*) y evitar alucinaciones.
-- **Testing desacoplado de LLMs con mocks**: suite de pruebas unitarias que simulan las respuestas del modelo de lenguaje, asegurando tests rápidos, deterministas y sin consumo de APIs externas.
 
 ---
 
@@ -32,37 +33,51 @@ El sistema es deliberadamente **conciso**: cada módulo expone solo los endpoint
 
 ---
 
-## 🚀 Endpoints (Alcance Reducido y Preciso)
+## 🚀 Endpoints
 
 ### `POST /users/register`
-Registra un nuevo usuario con contraseña hasheada en `bcrypt` y le crea automáticamente una billetera con **$1,000.00 USD** de saldo inicial (para facilitar las pruebas sin requerir un endpoint de depósito adicional).
+Registra un nuevo usuario con contraseña hasheada en **Argon2id** y le crea automáticamente una billetera con **$1,000.00 USD** de saldo inicial (para facilitar las pruebas sin requerir un endpoint de depósito adicional).
 
-**Patrón demostrado:** Creación transaccional de dos entidades relacionadas (usuario + billetera) como una única unidad de trabajo.
+**Patrón demostrado:** Creación transaccional de dos entidades relacionadas (usuario + billetera) como una única unidad de trabajo atómica (`flush` + `commit`).
 
 ---
 
 ### `POST /users/login`
 Autentica al usuario y retorna un **Bearer Token JWT** firmado con `HS256`.
 
-**Patrón demostrado:** Autenticación stateless con JWT. Los endpoints protegidos validan este token.
+**Patrón demostrado:** Autenticación stateless con JWT. Los endpoints protegidos validan este token mediante la dependencia `get_current_user` con esquema `HTTPBearer`.
 
 ---
 
-### `POST /wallet/transfer`
-Transfiere fondos entre dos usuarios de forma **atómica**. Si el emisor no tiene saldo suficiente o el receptor no existe, la operación se cancela sin modificar ningún balance. Registra dos movimientos contables inmutables (egreso para el emisor e ingreso para el receptor).
+### `GET /wallet/me` 🔒
+Devuelve los datos y saldo actual de la billetera del usuario autenticado.
 
-**Patrón demostrado:** Transacciones ACID con bloqueo de fila (`SELECT ... FOR UPDATE`), manejo de excepciones de negocio y ledger de doble entrada.
+**Patrón demostrado:** Endpoint protegido con inyección de dependencia de autenticación (`Depends(get_current_user)`).
 
 ---
 
-### `POST /chat/parse-expense`
-El usuario envía texto libre: *"Ayer cené ramen con unos amigos por 38 dólares"*. El motor LLM extrae y valida determinísticamente `{monto: 38.00, moneda: USD, categoría: Restaurantes, descripción: "Cena ramen con amigos"}`. El egreso se descuenta de la billetera y se almacena junto a su **embedding semántico** en `pgvector`.
+### `POST /transactions/` 🔒
+Registra un movimiento financiero (`INCOME` o `EXPENSE`). Si es un gasto, valida que el usuario tenga saldo suficiente, descuenta el monto de la billetera y genera un **embedding semántico** del texto de la transacción con IA para futuras búsquedas por similitud.
+
+**Patrón demostrado:** Commit atómico (saldo de wallet + transacción en una operación indivisible), validación de reglas de negocio (`InsufficientBalanceError`), generación de embeddings con LLM resiliente a fallos y almacenamiento vectorial en `pgvector`.
+
+---
+
+### `GET /transactions/` 🔒
+Devuelve el historial de transacciones del usuario autenticado, ordenadas de la más reciente a la más antigua, con paginación básica (`limit`).
+
+**Patrón demostrado:** Consultas paginadas con SQLAlchemy 2.0 async y serialización automática ORM → Pydantic via `from_attributes`.
+
+---
+
+### `POST /chat/parse-expense` 🔒 *(próximamente)*
+El usuario envía texto libre: *"Ayer cené ramen con unos amigos por 38 dólares"*. El motor LLM extrae y valida determinísticamente `{monto: 38.00, categoría: Restaurantes, descripción: "Cena ramen con amigos"}`. El egreso se descuenta de la billetera y se almacena junto a su embedding semántico.
 
 **Patrón demostrado:** Structured Outputs con esquemas Pydantic, consistencia transaccional y generación/indexación de embeddings vectoriales.
 
 ---
 
-### `POST /chat/ask`
+### `POST /chat/ask` 🔒 *(próximamente)*
 El usuario pregunta en lenguaje natural: *"¿En qué cosas de salud gasté dinero este mes?"*. El sistema genera el vector de la consulta, realiza una **búsqueda por similitud semántica** (`pgvector`) contra los gastos históricos, recupera el saldo actual y ensambla un prompt compositivo para que el LLM responda con datos exactos y grounding real.
 
 **Patrón demostrado:** Pipeline RAG (Retrieval-Augmented Generation) integrado con base de datos relacional y vectorial.
@@ -79,43 +94,46 @@ backend/
 ├── core/                       # Infraestructura técnica transversal
 │   ├── config.py               # Configuración tipada vía Pydantic Settings (.env)
 │   ├── database.py             # Engine async de SQLAlchemy + sesión asyncpg + pgvector
-│   ├── security.py             # Hashing bcrypt y generación/validación de tokens JWT
-│   ├── llm.py                  # Interfaz abstracta LLMClient + implementación Gemini (intercambiable)
-│   └── prompts/                # 🧠 Motor de composición de prompts
+│   ├── dependencies.py         # Dependencia get_current_user (HTTPBearer + JWT)
+│   ├── security.py             # Hashing Argon2id (pwdlib) y generación/validación de tokens JWT
+│   ├── llm.py                  # Cliente LLM asíncrono (text, structured, embedding) con Google Gemini
+│   └── prompts/                # 🧠 Motor de composición de prompts (próximamente)
 │       ├── base.py             # Directrices del sistema y guardrails de seguridad
 │       ├── registry.py         # Catálogo de plantillas desacopladas por caso de uso
 │       └── builder.py          # Ensamblador modular (Sistema + Contexto Financiero + Consulta)
 │
 ├── errors/                     # Manejo centralizado de errores
-│   ├── exceptions.py           # Jerarquía de excepciones de negocio (ej. InsufficientBalanceError)
-│   └── handlers.py             # Mapeo a respuestas HTTP estandarizadas (RFC 7807)
+│   ├── exceptions.py           # Jerarquía de excepciones de dominio (DomainError base)
+│   └── handlers.py             # Mapeo centralizado excepción → código HTTP
 │
 └── modules/                    # Dominios de negocio (Bounded Contexts)
     ├── users/
-    │   ├── models.py           # Modelos ORM de SQLAlchemy (tablas users, wallets)
-    │   ├── schemas.py          # Esquemas Pydantic de entrada/salida (DTOs)
-    │   ├── repository.py       # Consultas y persistencia a nivel de base de datos
-    │   ├── service.py          # Reglas de negocio: registro, hash y autenticación
-    │   └── router.py           # Endpoints HTTP: /register, /login
+    │   ├── models.py           # Modelo ORM: tabla users
+    │   ├── schemas.py          # Esquemas Pydantic: UserRegister, UserLogin, TokenResponse, UserResponse
+    │   ├── repository.py       # Consultas: get_by_email, get_by_id, create
+    │   ├── services.py         # Reglas de negocio: registro atómico (user + wallet) y autenticación
+    │   └── routes.py           # Endpoints HTTP: /register, /login
     │
     ├── wallet/
-    │   ├── models.py           # Modelo ORM de transacciones
-    │   ├── schemas.py          # Esquemas Pydantic de transferencia
-    │   ├── repository.py       # Consultas con bloqueo transaccional (SELECT FOR UPDATE)
-    │   ├── service.py          # Lógica ACID y validaciones de saldo
-    │   └── router.py           # Endpoint HTTP: /transfer
+    │   ├── models.py           # Modelo ORM: tabla wallets (balance, currency, timestamps)
+    │   ├── schemas.py          # Esquema Pydantic: WalletResponse
+    │   ├── repository.py       # Consulta: get_by_user_id
+    │   ├── services.py         # Lógica de negocio: consulta de billetera del usuario autenticado
+    │   └── routes.py           # Endpoint HTTP protegido: GET /wallet/me
     │
-    └── chat/
+    ├── transactions/
+    │   ├── models.py           # Modelo ORM: tabla transactions (con columna Vector pgvector 768d)
+    │   ├── schemas.py          # Esquemas: TransactionCreate (entrada validada) y TransactionResponse
+    │   ├── repository.py       # Consultas: create (con flush), get_by_wallet_id (paginado, desc)
+    │   ├── services.py         # Lógica financiera: validación de saldo, commit atómico, embedding IA
+    │   └── routes.py           # Endpoints HTTP protegidos: POST y GET /transactions/
+    │
+    └── chat/                   # (próximamente)
         ├── models.py           # Modelo ORM de gastos (con columna vector pgvector)
         ├── schemas.py          # Esquemas para Structured Outputs y consultas
         ├── repository.py       # Búsqueda por similitud vectorial (distancia coseno / L2)
-        ├── service.py          # Orquestación: LLM → Embedding → BD → Prompt → Respuesta
-        └── router.py           # Endpoints HTTP: /parse-expense, /ask
-
-tests/                          # Suite de pruebas automatizadas
-├── conftest.py                 # Fixtures compartidas (cliente de test async, mocks)
-├── test_transfer_service.py    # Test unitario puro: validación de lógica ACID y saldos
-└── test_expense_parser.py      # Test unitario: parsing de gastos usando mock del LLM
+        ├── services.py         # Orquestación: LLM → Embedding → BD → Prompt → Respuesta
+        └── routes.py           # Endpoints HTTP: /parse-expense, /ask
 ```
 
 ---
@@ -124,13 +142,14 @@ tests/                          # Suite de pruebas automatizadas
 
 | Área | Tecnología | Justificación |
 |:---|:---|:---|
-| **Framework Web** | FastAPI (Python 3.11+) | Rendimiento asíncrono y generación automática de OpenAPI |
+| **Framework Web** | FastAPI (Python 3.13+) | Rendimiento asíncrono y generación automática de OpenAPI |
 | **Servidor ASGI** | FastAPI CLI (`fastapi dev`) / Uvicorn | Entorno de desarrollo moderno con recarga en caliente |
 | **Validación y Schemas** | Pydantic v2 & Pydantic Settings | Tipado estricto y configuración validada |
-| **Base de Datos** | PostgreSQL 16 + `pgvector` | Consistencia ACID relacional y búsqueda vectorial nativa |
-| **ORM & Acceso a Datos** | SQLAlchemy 2.0 (`asyncpg`) | Mapeo objeto-relacional asíncrono moderno |
-| **Modelos de IA (LLMs)** | Google Gemini (impl. por defecto) | Interfaz abstracta `LLMClient`: la lógica de negocio es agnóstica al proveedor; intercambiable por OpenAI, Anthropic, etc. |
-| **Testing** | Pytest + `pytest-asyncio` + Mocks | Pruebas unitarias sin dependencias externas ni coste de API |
+| **Base de Datos** | PostgreSQL 17 + `pgvector` | Consistencia ACID relacional y búsqueda vectorial nativa |
+| **ORM & Acceso a Datos** | SQLAlchemy 2.0 (`asyncpg`) | Mapeo objeto-relacional asíncrono moderno (`Mapped` / `mapped_column`) |
+| **Hashing de Contraseñas** | Argon2id (`pwdlib[argon2]`) | Ganador de PHC 2015 y recomendación OWASP 2026 |
+| **Autenticación** | JWT (`pyjwt`) + `HTTPBearer` | Tokens stateless con esquema Bearer estándar |
+| **Modelos de IA (LLMs)** | Google Gemini (`google-genai`) | Interfaz abstracta `LLMClient`: la lógica de negocio es agnóstica al proveedor; intercambiable por OpenAI, Anthropic, etc. |
 | **Gestor de Paquetes** | `uv` | Entorno virtual y resolución de dependencias de alta velocidad |
 | **Contenedores** | Docker & Docker Compose | Aislamiento reproducible de PostgreSQL + `pgvector` |
 
@@ -145,44 +164,42 @@ tests/                          # Suite de pruebas automatizadas
 [POST /users/login]          → Obtiene el JWT. Se autentica en Swagger UI (/docs)
              │
              ▼
-[POST /wallet/transfer]      → Transfiere $50.00 a "María" de forma atómica (ACID)
-                               Saldo de Andrés: $950.00 | Saldo de María: $1,050.00
+[GET /wallet/me]             → Consulta su saldo: $1,000.00 USD
+             │
+             ▼
+[POST /transactions/]        → Registra gasto: "Cena en restaurante" $45.50
+                               Saldo actualizado: $954.50
+                               Embedding semántico generado y almacenado en pgvector
+             │
+             ▼
+[GET /transactions/]         → Lista su historial de movimientos ordenado por fecha
              │
              ▼
 [POST /chat/parse-expense]   → Andrés envía: "Gasté $35 en cenar ramen con amigos"
-                               LLM extrae: {monto: 35, categoría: Restaurantes}
+  (próximamente)               LLM extrae: {monto: 35, categoría: Restaurantes}
                                Egreso registrado + embedding guardado en pgvector
-                               Saldo de Andrés: $915.00
+                               Saldo de Andrés: $919.50
              │
              ▼
 [POST /chat/ask]             → Andrés pregunta: "¿Cuánto he gastado en comida?"
-                               Búsqueda por similitud vectorial → localiza la cena de ramen
-                               Inyecta saldo real ($915.00) en el prompt compositivo
+  (próximamente)               Búsqueda por similitud vectorial → localiza gastos de comida
+                               Inyecta saldo real en el prompt compositivo
                                LLM responde con datos exactos y verificables
 ```
-
----
-
-## 🧪 Estrategia de Testing
-
-Los tests demuestran **aislamiento de dependencias y pruebas de lógica crítica**:
-
-- **`test_transfer_service.py`**: Test unitario de la lógica financiera. Verifica que se lance `InsufficientBalanceError` ante fondos insuficientes y que las transferencias exitosas calculen los saldos correctamente, utilizando mocks del repositorio sin tocar la base de datos real.
-- **`test_expense_parser.py`**: Test de integración de IA con mock del cliente LLM. Valida que el pipeline de Structured Outputs procese e instancie el schema de Pydantic sin invocar llamadas externas ni generar costes.
 
 ---
 
 ## ⚙️ Instalación y Puesta en Marcha
 
 ### Prerrequisitos
-- **Python 3.11+** y **[uv](https://docs.astral.sh/uv/)**.
+- **Python 3.13+** y **[uv](https://docs.astral.sh/uv/)**.
 - **Docker & Docker Compose** (para PostgreSQL con `pgvector`).
 - API Key del proveedor LLM configurado (ej. Google Gemini u otro).
 
 ### Pasos
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/andrespalaciovelasquez/-smart-wallet-ai
+git clone https://github.com/andrespalaciovelasquez/smart-wallet-ai
 cd smart-wallet-ai
 
 # 2. Configurar variables de entorno
