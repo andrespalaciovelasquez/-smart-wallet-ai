@@ -72,14 +72,14 @@ Devuelve el historial de transacciones del usuario autenticado, ordenadas de la 
 
 ---
 
-### `POST /chat/parse-expense` 🔒 *(próximamente)*
+### `POST /chat/parse-expense` 🔒
 El usuario envía texto libre: *"Ayer cené ramen con unos amigos por 38 dólares"*. El motor LLM extrae y valida determinísticamente `{monto: 38.00, categoría: Restaurantes, descripción: "Cena ramen con amigos"}`. El egreso se descuenta de la billetera y se almacena junto a su embedding semántico.
 
 **Patrón demostrado:** Structured Outputs con esquemas Pydantic, consistencia transaccional y generación/indexación de embeddings vectoriales.
 
 ---
 
-### `POST /chat/ask` 🔒 *(próximamente)*
+### `POST /chat/ask` 🔒
 El usuario pregunta en lenguaje natural: *"¿En qué cosas de salud gasté dinero este mes?"*. El sistema genera el vector de la consulta, realiza una **búsqueda por similitud semántica** (`pgvector`) contra los gastos históricos, recupera el saldo actual y ensambla un prompt compositivo para que el LLM responda con datos exactos y grounding real.
 
 **Patrón demostrado:** Pipeline RAG (Retrieval-Augmented Generation) integrado con base de datos relacional y vectorial.
@@ -99,10 +99,7 @@ backend/
 │   ├── dependencies.py         # Dependencia get_current_user (HTTPBearer + JWT)
 │   ├── security.py             # Hashing Argon2id (pwdlib) y generación/validación de tokens JWT
 │   ├── llm.py                  # Cliente LLM agnóstico con SDK oficial OpenAI (compatible con Gemini, OpenAI, Ollama, etc.)
-│   └── prompts/                # 🧠 Motor de composición de prompts (próximamente)
-│       ├── base.py             # Directrices del sistema y guardrails de seguridad
-│       ├── registry.py         # Catálogo de plantillas desacopladas por caso de uso
-│       └── builder.py          # Ensamblador modular (Sistema + Contexto Financiero + Consulta)
+│   └── prompts.py              # 🛡️ Políticas corporativas globales de seguridad y guardrails para LLMs (SSOT)
 │
 ├── errors/                     # Manejo centralizado de errores
 │   ├── exceptions.py           # Jerarquía de excepciones de dominio (DomainError base)
@@ -126,16 +123,15 @@ backend/
     ├── transactions/
     │   ├── models.py           # Modelo ORM: tabla transactions (con columna Vector pgvector 768d)
     │   ├── schemas.py          # Esquemas: TransactionCreate (entrada validada) y TransactionResponse
-    │   ├── repository.py       # Consultas: create (con flush), get_by_wallet_id (paginado, desc)
+    │   ├── repository.py       # Consultas: create (con flush), get_by_wallet_id, search_semantic (KNN pgvector)
     │   ├── services.py         # Lógica financiera: validación de saldo, commit atómico, embedding IA
     │   └── routes.py           # Endpoints HTTP protegidos: POST y GET /transactions/
     │
-    └── chat/                   # (próximamente)
-        ├── models.py           # Modelo ORM de gastos (con columna vector pgvector)
-        ├── schemas.py          # Esquemas para Structured Outputs y consultas
-        ├── repository.py       # Búsqueda por similitud vectorial (distancia coseno / L2)
-        ├── services.py         # Orquestación: LLM → Embedding → BD → Prompt → Respuesta
-        └── routes.py           # Endpoints HTTP: /parse-expense, /ask
+    └── chat/                   # 💬 Asistente Financiero & IA Conversacional
+        ├── schemas.py          # Esquemas para Structured Outputs y consultas RAG
+        ├── prompts.py          # 🧠 Prompts de dominio financiero y FinancialPromptBuilder (RAG)
+        ├── services.py         # Orquestación: LLM → Embedding → pgvector → Prompt Compositivo → Respuesta
+        └── routes.py           # Endpoints HTTP protegidos: /parse-expense, /ask
 ```
 
 ---
@@ -193,13 +189,13 @@ Cualquier proveedor compatible se configura exclusivamente mediante variables de
              │
              ▼
 [POST /chat/parse-expense]   → Andrés envía: "Gasté $35 en cenar ramen con amigos"
-  (próximamente)               LLM extrae: {monto: 35, categoría: Restaurantes}
+                                LLM extrae: {monto: 35, categoría: Restaurantes}
                                Egreso registrado + embedding guardado en pgvector
                                Saldo de Andrés: $919.50
              │
              ▼
 [POST /chat/ask]             → Andrés pregunta: "¿Cuánto he gastado en comida?"
-  (próximamente)               Búsqueda por similitud vectorial → localiza gastos de comida
+                                Búsqueda por similitud vectorial → localiza gastos de comida
                                Inyecta saldo real en el prompt compositivo
                                LLM responde con datos exactos y verificables
 ```
