@@ -28,3 +28,20 @@ class TransactionRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def search_semantic(
+        self,
+        wallet_id: int,
+        query_embedding: list[float],
+        limit: int = 5,
+    ) -> Sequence[Transaction]:
+        """Busca transacciones semánticamente similares a un vector de consulta usando distancia coseno"""
+        stmt = (
+            select(Transaction)
+            .where(Transaction.wallet_id == wallet_id)
+            .where(Transaction.embedding.is_not(None))
+            .order_by(Transaction.embedding.cosine_distance(query_embedding))
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
