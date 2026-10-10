@@ -2,7 +2,7 @@
 
 > 📚 **Proyecto de Estudio y Portfolio Técnico**  
 > Backend API para una Billetera Digital con Asistente Financiero IA.  
-> Construido con **FastAPI**, **Clean Architecture / DDD** y patrones reales de **AI Engineering** (Structured Outputs, Búsqueda Semántica con **pgvector** y Prompts Compositivos desacoplados de cualquier proveedor LLM).
+> Construido con **FastAPI**, **Clean Architecture / DDD** y patrones reales de **AI Engineering** (Structured Outputs con OpenAI SDK, Búsqueda Semántica con **pgvector**, Embeddings Matryoshka y Prompts Compositivos desacoplados de cualquier proveedor LLM).
 
 ---
 
@@ -17,11 +17,13 @@ Este proyecto es un **ejercicio de construcción personal** para consolidar y de
 - Validación estricta de esquemas de entrada/salida con **Pydantic v2**.
 - Autenticación **stateless** con JWT (HS256) y **Argon2id** (OWASP 2026) para hashing de contraseñas.
 
-### 2. AI Engineering (LLMs Agnósticos + pgvector)
+### 2. AI Engineering (Protocolo Estándar OpenAI + pgvector)
+- **Protocolo Estándar de la Industria & Cero Vendor Lock-in**: Implementación basada en el SDK oficial de OpenAI (`openai.AsyncOpenAI`) utilizando el patrón *OpenAI-compatible protocol*. A través de la variable `LLM_BASE_URL`, el sistema conmuta sin tocar una sola línea de código entre **Google Gemini** (desarrollo gratuito), **OpenAI / Azure OpenAI** (producción enterprise) o **modelos locales on-premise** como Ollama/vLLM.
 - **Almacenamiento vectorial híbrido**: registro de transacciones financieras con su embedding semántico en **PostgreSQL + `pgvector`**, habilitando búsquedas por significado (*"¿Cuánto gasté en salud?"* encuentra "Farmacia San Pablo" sin depender de coincidencia exacta de texto).
-- **Generación de embeddings resiliente**: si la API del LLM falla, la transacción financiera se guarda sin bloquear al usuario (el embedding queda como `NULL` y puede generarse después).
-- **Structured Outputs deterministas**: extracción confiable de entidades financieras a partir de lenguaje natural mediante esquemas tipados Pydantic, desacoplado de la API o proveedor de LLM específico.
-- **Arquitectura de Prompts Compositivos**: ensamblaje dinámico y modular de contexto (instrucciones de sistema + datos financieros reales + consulta del usuario) para garantizar respuestas verídicas (*grounding*) y evitar alucinaciones.
+- **Embeddings Matryoshka tipados**: generación de vectores fijados a 768 dimensiones estándar (`dimensions=768`) para maximizar velocidad de cómputo y ahorro de almacenamiento indexado.
+- **Generación de embeddings resiliente**: si la API del LLM experimenta rate limits o indisponibilidad, la transacción financiera se procesa sin bloquear al usuario (el embedding queda en `NULL` para reintento asíncrono posterior).
+- **Structured Outputs deterministas**: extracción estricta de entidades financieras a partir de lenguaje natural mediante `client.beta.chat.completions.parse` con esquemas Pydantic, garantizando outputs válidos sin parseos manuales propensos a fallos.
+- **Arquitectura de Prompts Compositivos**: ensamblaje dinámico y modular de contexto (instrucciones de sistema + datos financieros reales + consulta del usuario) para garantizar respuestas verídicas (*grounding*) y mitigar alucinaciones.
 
 ---
 
@@ -96,7 +98,7 @@ backend/
 │   ├── database.py             # Engine async de SQLAlchemy + sesión asyncpg + pgvector
 │   ├── dependencies.py         # Dependencia get_current_user (HTTPBearer + JWT)
 │   ├── security.py             # Hashing Argon2id (pwdlib) y generación/validación de tokens JWT
-│   ├── llm.py                  # Cliente LLM asíncrono (text, structured, embedding) con Google Gemini
+│   ├── llm.py                  # Cliente LLM agnóstico con SDK oficial OpenAI (compatible con Gemini, OpenAI, Ollama, etc.)
 │   └── prompts/                # 🧠 Motor de composición de prompts (próximamente)
 │       ├── base.py             # Directrices del sistema y guardrails de seguridad
 │       ├── registry.py         # Catálogo de plantillas desacopladas por caso de uso
@@ -149,9 +151,24 @@ backend/
 | **ORM & Acceso a Datos** | SQLAlchemy 2.0 (`asyncpg`) | Mapeo objeto-relacional asíncrono moderno (`Mapped` / `mapped_column`) |
 | **Hashing de Contraseñas** | Argon2id (`pwdlib[argon2]`) | Ganador de PHC 2015 y recomendación OWASP 2026 |
 | **Autenticación** | JWT (`pyjwt`) + `HTTPBearer` | Tokens stateless con esquema Bearer estándar |
-| **Modelos de IA (LLMs)** | Google Gemini (`google-genai`) | Interfaz abstracta `LLMClient`: la lógica de negocio es agnóstica al proveedor; intercambiable por OpenAI, Anthropic, etc. |
+| **Ecosistema de IA (LLMs)** | OpenAI SDK oficial (`openai` AsyncOpenAI) | Protocolo estándar de la industria. Provee interoperabilidad total con OpenAI, Azure OpenAI, Google Gemini (OpenAI compatibility endpoint), Ollama o vLLM simplemente ajustando `LLM_BASE_URL` sin tocar código de la aplicación. |
 | **Gestor de Paquetes** | `uv` | Entorno virtual y resolución de dependencias de alta velocidad |
 | **Contenedores** | Docker & Docker Compose | Aislamiento reproducible de PostgreSQL + `pgvector` |
+
+---
+
+### 🌐 Patrón de Interoperabilidad Multi-Proveedor (OpenAI Compatible Protocol)
+
+En lugar de utilizar SDKs propietarios de cada fabricante (que generan vendor lock-in y obligan a reescribir código al migrar de proveedor), **SmartWallet AI** adopta el **protocolo OpenAI como estándar arquitectónico**.
+
+Cualquier proveedor compatible se configura exclusivamente mediante variables de entorno:
+
+| Entorno / Proveedor | `LLM_BASE_URL` | `LLM_MODEL` | `EMBEDDING_MODEL` | Beneficio |
+|:---|:---|:---|:---|:---|
+| **Desarrollo (Google Gemini)** | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-3.5-flash` | `gemini-embedding-001` | **Gratuito**: pruebas completas sin costos de tarjeta. |
+| **Producción (OpenAI Nativo)** | *(vacío / omitido)* | `gpt-4o-mini` | `text-embedding-3-small` | Rendimiento oficial en la nube de OpenAI. |
+| **Corporativo (Azure OpenAI)** | `https://{resource}.openai.azure.com/openai/deployments/{deploy}` | `gpt-4o` | `text-embedding-3-small` | Cumplimiento empresarial, SLA y aislamiento de red. |
+| **Privado / Local (Ollama/vLLM)**| `http://localhost:11434/v1` | `llama3.1` | `nomic-embed-text` | 100% On-Premise y privacidad absoluta de datos. |
 
 ---
 
