@@ -132,6 +132,19 @@ backend/
         ├── prompts.py          # 🧠 Prompts de dominio financiero y FinancialPromptBuilder (RAG)
         ├── services.py         # Orquestación: LLM → Embedding → pgvector → Prompt Compositivo → Respuesta
         └── routes.py           # Endpoints HTTP protegidos: /parse-expense, /ask
+│
+tests/                          # 🧪 Suite de pruebas automatizadas (Espejo de Dominios)
+├── conftest.py                 # Fixtures compartidos globales (mock_user, mock_wallet)
+├── core/
+│   └── test_security.py        # Pruebas de hashing Argon2id y ciclo de vida JWT
+└── modules/
+    ├── users/
+    │   └── test_auth_service.py # Registro atómico, detección de duplicados y login
+    ├── transactions/
+    │   └── test_transaction_service.py # Débito, saldo insuficiente y resiliencia de IA
+    └── chat/
+        ├── test_expense_parser.py # Extracción estructurada con Pydantic y OpenAI SDK
+        └── test_financial_rag.py  # Pipeline RAG con pgvector, grounding y fallbacks
 ```
 
 ---
@@ -142,6 +155,7 @@ backend/
 |:---|:---|:---|
 | **Framework Web** | FastAPI (Python 3.13+) | Rendimiento asíncrono y generación automática de OpenAPI |
 | **Servidor ASGI** | FastAPI CLI (`fastapi dev`) / Uvicorn | Entorno de desarrollo moderno con recarga en caliente |
+| **Testing & Mocking** | Pytest (`pytest-asyncio`, `pytest-mock`) | Suite en espejo de dominios (16 tests) con mocks asíncronos rápidos y sin costos de API |
 | **Validación y Schemas** | Pydantic v2 & Pydantic Settings | Tipado estricto y configuración validada |
 | **Base de Datos** | PostgreSQL 17 + `pgvector` | Consistencia ACID relacional y búsqueda vectorial nativa |
 | **ORM & Acceso a Datos** | SQLAlchemy 2.0 (`asyncpg`) | Mapeo objeto-relacional asíncrono moderno (`Mapped` / `mapped_column`) |
@@ -226,6 +240,9 @@ uv sync
 
 # 5. Ejecutar servidor en modo desarrollo
 uv run fastapi dev backend/main.py
+
+# 6. Ejecutar la suite completa de pruebas automatizadas (16 tests)
+uv run pytest
 ```
 
 * **Swagger UI interactivo:** `http://127.0.0.1:8000/docs`
