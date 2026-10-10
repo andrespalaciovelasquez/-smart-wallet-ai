@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
 from backend.core.database import engine, Base, get_db
+from backend.core.telemetry import setup_telemetry
 from backend.modules.users.models import User  # noqa: F401
 from backend.modules.wallet.models import Wallet  # noqa: F401
 from backend.modules.transactions.models import Transaction  # noqa: F401
@@ -29,6 +30,9 @@ app = FastAPI(
     debug=settings.is_debug,
     lifespan=lifespan
 )
+
+# Inicializar Observabilidad OpenTelemetry (Tracing + Métricas centralizadas)
+setup_telemetry(app)
 
 # Registrar interceptores globales de error
 register_exception_handlers(app)

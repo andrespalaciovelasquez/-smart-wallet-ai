@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str
     EMBEDDING_DIMENSION: int = 768
 
+    # Observabilidad (OpenTelemetry -> Tempo)
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4317"
+
     @property
     def is_debug(self) -> bool:
         return self.APP_ENV == "development"

@@ -25,6 +25,12 @@ Este proyecto es un **ejercicio de construcción personal** para consolidar y de
 - **Structured Outputs deterministas**: extracción estricta de entidades financieras a partir de lenguaje natural mediante `client.beta.chat.completions.parse` con esquemas Pydantic, garantizando outputs válidos sin parseos manuales propensos a fallos.
 - **Arquitectura de Prompts Compositivos**: ensamblaje dinámico y modular de contexto (instrucciones de sistema + datos financieros reales + consulta del usuario) para garantizar respuestas verídicas (*grounding*) y mitigar alucinaciones.
 
+### 3. Observabilidad & Tracing Distribuido (OpenTelemetry + Prometheus + Tempo + Grafana)
+- **Clean Architecture & Cero Acoplamiento**: Observabilidad 100% perimetral. Ni la capa de dominio (`modules/`) ni la lógica de negocio (`services.py`, `llm.py`) conocen o importan OpenTelemetry.
+- **Trazabilidad Unificada de Extremo a Extremo**: Cada solicitud HTTP genera un árbol jerárquico de spans que correlaciona la ruta web, las consultas SQL a PostgreSQL y las llamadas al motor de IA (`ChatCompletion` y `CreateEmbeddings`).
+- **Métricas de Producción**: Exposición nativa de métricas del sistema y latencias HTTP en formato OpenMetrics/Prometheus a través del endpoint `/metrics`.
+- **Ecosistema de Monitoreo Completo en Docker**: Stack integrado con **Grafana Tempo** (almacenamiento de trazas OTLP gRPC), **Prometheus** (recolección de series temporales) y **Grafana** (visualización y correlación unificada de métricas y trazas).
+
 ---
 
 ## 📌 ¿Qué hace la aplicación?
@@ -98,8 +104,9 @@ backend/
 │   ├── database.py             # Engine async de SQLAlchemy + sesión asyncpg + pgvector
 │   ├── dependencies.py         # Dependencia get_current_user (HTTPBearer + JWT)
 │   ├── security.py             # Hashing Argon2id (pwdlib) y generación/validación de tokens JWT
+│   ├── telemetry.py            # Observabilidad centralizada: OpenTelemetry (Tempo OTLP) + Prometheus (/metrics)
 │   ├── llm.py                  # Cliente LLM agnóstico con SDK oficial OpenAI (compatible con Gemini, OpenAI, Ollama, etc.)
-│   └── prompts.py              # 🛡️ Políticas corporativas globales de seguridad y guardrails para LLMs (SSOT)
+│   └── prompts.py              # Políticas corporativas globales de seguridad y guardrails para LLMs (SSOT)
 │
 ├── errors/                     # Manejo centralizado de errores
 │   ├── exceptions.py           # Jerarquía de excepciones de dominio (DomainError base)
@@ -127,13 +134,23 @@ backend/
     │   ├── services.py         # Lógica financiera: validación de saldo, commit atómico, embedding IA
     │   └── routes.py           # Endpoints HTTP protegidos: POST y GET /transactions/
     │
-    └── chat/                   # 💬 Asistente Financiero & IA Conversacional
+    └── chat/                   # Asistente Financiero & IA Conversacional
         ├── schemas.py          # Esquemas para Structured Outputs y consultas RAG
-        ├── prompts.py          # 🧠 Prompts de dominio financiero y FinancialPromptBuilder (RAG)
+        ├── prompts.py          # Prompts de dominio financiero y FinancialPromptBuilder (RAG)
         ├── services.py         # Orquestación: LLM → Embedding → pgvector → Prompt Compositivo → Respuesta
         └── routes.py           # Endpoints HTTP protegidos: /parse-expense, /ask
 │
-tests/                          # 🧪 Suite de pruebas automatizadas (Espejo de Dominios)
+monitoring/                     # Stack de Observabilidad & Métricas (Docker)
+├── grafana/
+│   └── provisioning/
+│       └── datasources/
+│           └── datasources.yml # Auto-aprovisionamiento de datasources (Prometheus + Tempo)
+├── prometheus/
+│   └── prometheus.yml          # Configuración de scraping a FastAPI (/metrics cada 5s)
+└── tempo/
+    └── tempo.yml               # Ingestor OTLP gRPC (4317) y almacenamiento local de trazas
+│
+tests/                          # Suite de pruebas automatizadas (Espejo de Dominios)
 ├── conftest.py                 # Fixtures compartidos globales (mock_user, mock_wallet)
 ├── core/
 │   └── test_security.py        # Pruebas de hashing Argon2id y ciclo de vida JWT
@@ -162,8 +179,12 @@ tests/                          # 🧪 Suite de pruebas automatizadas (Espejo de
 | **Hashing de Contraseñas** | Argon2id (`pwdlib[argon2]`) | Ganador de PHC 2015 y recomendación OWASP 2026 |
 | **Autenticación** | JWT (`pyjwt`) + `HTTPBearer` | Tokens stateless con esquema Bearer estándar |
 | **Ecosistema de IA (LLMs)** | OpenAI SDK oficial (`openai` AsyncOpenAI) | Protocolo estándar de la industria. Provee interoperabilidad total con OpenAI, Azure OpenAI, Google Gemini (OpenAI compatibility endpoint), Ollama o vLLM simplemente ajustando `LLM_BASE_URL` sin tocar código de la aplicación. |
+| **Observabilidad (Tracing)** | OpenTelemetry SDK + OTLP Exporter | Instrumentación estándar de la industria para tracing distribuido sin acoplar la lógica de dominio |
+| **Tracing Backend** | Grafana Tempo | Almacenamiento y búsqueda distribuida de trazas vía OTLP gRPC en puerto 4317 |
+| **Métricas del Sistema** | Prometheus + `opentelemetry-exporter-prometheus` | Recolección de series temporales y latencias scraping el endpoint `/metrics` |
+| **Visualización Unificada** | Grafana 11 | Exploración de trazas en cascada y dashboards correlacionados preconfigurados |
 | **Gestor de Paquetes** | `uv` | Entorno virtual y resolución de dependencias de alta velocidad |
-| **Contenedores** | Docker & Docker Compose | Aislamiento reproducible de PostgreSQL + `pgvector` |
+| **Contenedores** | Docker & Docker Compose | Aislamiento reproducible de PostgreSQL + `pgvector`, Tempo, Prometheus y Grafana |
 
 ---
 
@@ -216,12 +237,59 @@ Cualquier proveedor compatible se configura exclusivamente mediante variables de
 
 ---
 
+## 🔭 Observabilidad de Extremo a Extremo (Tracing Distribuido & Clean Architecture)
+
+El sistema incorpora un stack completo de observabilidad basado en estándares abiertos (**OpenTelemetry**, **Grafana Tempo**, **Prometheus** y **Grafana**), diseñado bajo un principio estricto: **cero acoplamiento en la capa de negocio**.
+
+### 1. Filosofía de Diseño: Observabilidad Perimetral
+Ningún archivo de dominio (`modules/users`, `modules/wallet`, `modules/transactions`, `modules/chat`) ni el cliente LLM (`core/llm.py`) importa librerías de OpenTelemetry ni crea spans manualmente. Toda la instrumentación se inicializa de forma centralizada y transparente en backend/core/telemetry.py.
+
+### 2. Auto-Instrumentación en 3 Capas
+Cuando un cliente realiza una petición HTTP (por ejemplo, a `/chat/parse-expense` o `/chat/ask`), el contexto se propaga de forma asíncrona generando una traza jerárquica unificada:
+
+```text
+SmartWallet AI: POST /chat/parse-expense (Root Span - FastAPI)
+ ├── POST /chat/parse-expense http receive
+ ├── connect (PostgreSQL)
+ ├── SELECT (Autenticación y consulta de usuario)
+ ├── ChatCompletion (OpenAI / Gemini Structured Outputs)
+ ├── SELECT (Consulta de billetera)
+ ├── CreateEmbeddings (OpenAI / Gemini Embeddings para pgvector)
+ ├── INSERT (Persistencia de transacción + vector)
+ ├── UPDATE (Actualización atómica de saldo)
+ └── POST /chat/parse-expense http send
+```
+
+* **Capa Web (FastAPI)**: `FastAPIInstrumentor` intercepta la petición, mide latencias, registra códigos HTTP y genera el span raíz.
+* **Capa de Datos (SQLAlchemy)**: `SQLAlchemyInstrumentor` captura las consultas SQL (`SELECT`, `INSERT`, `UPDATE`), sentencias DDL y búsquedas semánticas KNN en `pgvector`, preservando la propagación de contexto asíncrono (`contextvars`) a través del puente greenlet del motor.
+* **Capa de IA (OpenAI / LLMs)**: `openinference-instrumentation-openai` instrumenta automáticamente las llamadas al SDK de OpenAI, registrando los spans de `ChatCompletion` y `CreateEmbeddings` con metadatos de tokens, modelo y tiempos de inferencia.
+
+### 3. Stack de Monitoreo y Puertos
+
+| Servicio | Puerto | Descripción | Acceso |
+|:---|:---|:---|:---|
+| **FastAPI Backend** | `8000` | API REST principal con endpoints de negocio y Swagger UI | `http://localhost:8000/docs` |
+| **Endpoint Métricas** | `8000` | Exposición de métricas en formato estándar OpenMetrics | `http://localhost:8000/metrics` |
+| **Grafana** | `3000` | Interfaz visual unificada para trazas y métricas (User: `admin`, Pass: `admin`) | `http://localhost:3000` |
+| **Prometheus** | `9090` | Motor de series temporales que recolecta métricas cada 5s | `http://localhost:9090` |
+| **Grafana Tempo** | `3200` / `4317` | Backend de tracing. Ingesta trazas vía OTLP gRPC (`4317`) | `http://localhost:3200` |
+| **PostgreSQL + pgvector** | `5432` | Base de datos relacional y almacenamiento vectorial KNN | `localhost:5432` |
+
+### 4. Cómo Inspeccionar Trazas en Grafana
+1. Abre **Grafana** en `http://localhost:3000` e inicia sesión (`admin` / `admin`).
+2. En el menú lateral izquierdo, haz clic en **Explore**.
+3. Selecciona la fuente de datos **Tempo** (configurada automáticamente vía auto-provisioning).
+4. En el tab **Search**, selecciona el servicio `SmartWallet AI` y haz clic en **Run query**.
+5. Haz clic en cualquiera de las trazas del listado para ver el desglose en cascada (*waterfall*) de extremo a extremo con sus tiempos individuales.
+
+---
+
 ## ⚙️ Instalación y Puesta en Marcha
 
 ### Prerrequisitos
 - **Python 3.13+** y **[uv](https://docs.astral.sh/uv/)**.
-- **Docker & Docker Compose** (para PostgreSQL con `pgvector`).
-- API Key del proveedor LLM configurado (ej. Google Gemini u otro).
+- **Docker & Docker Compose** (para PostgreSQL con `pgvector`, Tempo, Prometheus y Grafana).
+- API Key del proveedor LLM configurado (ej. Google Gemini u otro compatible con OpenAI).
 
 ### Pasos
 ```bash
@@ -232,10 +300,10 @@ cd smart-wallet-ai
 # 2. Configurar variables de entorno
 cp .env.example .env
 
-# 3. Iniciar base de datos PostgreSQL + pgvector
+# 3. Iniciar el stack completo de contenedores (BD + Observabilidad)
 docker compose up -d
 
-# 4. Instalar dependencias del proyecto
+# 4. Instalar dependencias del proyecto con uv
 uv sync
 
 # 5. Ejecutar servidor en modo desarrollo
@@ -245,5 +313,9 @@ uv run fastapi dev backend/main.py
 uv run pytest
 ```
 
+### URLs de Acceso Rápido
 * **Swagger UI interactivo:** `http://127.0.0.1:8000/docs`
 * **ReDoc:** `http://127.0.0.1:8000/redoc`
+* **Métricas Prometheus:** `http://127.0.0.1:8000/metrics`
+* **Grafana (Dashboards & Traces):** `http://127.0.0.1:3000` (Credenciales por defecto: `admin` / `admin`)
+* **Prometheus UI:** `http://127.0.0.1:9090`
