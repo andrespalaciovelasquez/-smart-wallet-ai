@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     # Inteligencia Artificial (Agnóstico de Proveedor)
     LLM_API_KEY: str
+    LLM_BASE_URL: str | None = None
     LLM_MODEL: str
     EMBEDDING_MODEL: str
     EMBEDDING_DIMENSION: int = 768
